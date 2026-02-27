@@ -1,0 +1,649 @@
+from flask import Flask, render_template_string
+import sqlite3
+import threading
+import re
+import time
+import requests
+from datetime import datetime
+import hashlib
+import os
+
+# =======================
+# إعدادات TimeSMS
+# =======================
+TIMESMS_USERNAME = "mohaymen"
+TIMESMS_PASSWORD = "mohaymen"
+BASE_URL = "http://timesms.net"
+
+# =======================
+# إعداد Flask
+# =======================
+app = Flask(__name__)
+DB_FILE = "timesms_data.db"
+
+# حذف قاعدة البيانات القديمة (للتأكد من الهيكل الجديد)
+if os.path.exists(DB_FILE):
+    os.remove(DB_FILE)
+    print("🗑️ تم حذف قاعدة البيانات القديمة")
+
+# إنشاء قاعدة البيانات بالهيكل الصحيح
+conn = sqlite3.connect(DB_FILE)
+c = conn.cursor()
+c.execute("""
+CREATE TABLE sms_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sms_date TEXT,
+    country_range TEXT,
+    phone_number TEXT,
+    cli_number TEXT,
+    client_name TEXT,
+    message_text TEXT,
+    currency_type TEXT,
+    my_earnings TEXT,
+    client_earnings TEXT,
+    otp_code TEXT,
+    service_name TEXT,
+    created_at TEXT
+)
+""")
+conn.commit()
+conn.close()
+
+print("✅ تم إنشاء قاعدة البيانات الجديدة")
+
+# =======================
+# قالب HTML (بعد التعديل)
+# =======================
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <title>S E L V A & O T P ✨❤️</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="5">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&family=Tajawal:wght@400;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Cairo', 'Tajawal', sans-serif;
+            min-height: 100vh;
+            padding: 20px;
+            direction: rtl;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        /* header */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .header h1 {
+            color: #fff;
+            font-size: 2.5em;
+            font-weight: 900;
+            text-shadow: 0 0 20px rgba(255,255,255,0.5);
+            letter-spacing: 2px;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            from { text-shadow: 0 0 10px #fff, 0 0 20px #fff; }
+            to { text-shadow: 0 0 20px #fff, 0 0 30px #ff00ff, 0 0 40px #ff00ff; }
+        }
+        
+        .stats {
+            color: #fff;
+            margin-top: 10px;
+            font-size: 1.1em;
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 10px;
+        }
+        
+        /* cards */
+        .card {
+            background: rgba(255,255,255,0.95);
+            border-radius: 25px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            transform: translateY(0);
+            transition: all 0.3s ease;
+            border: 2px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+            border-color: #ff00ff;
+        }
+        
+        .card-title {
+            text-align: center;
+            color: #ff00ff;
+            font-size: 1.8em;
+            font-weight: 900;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(255,0,255,0.3);
+            letter-spacing: 1px;
+        }
+        
+        .info-row {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            margin: 8px 0;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            border-right: 5px solid #ff00ff;
+            font-size: 1.1em;
+        }
+        
+        .info-row .emoji {
+            font-size: 1.3em;
+            margin-left: 10px;
+            min-width: 30px;
+        }
+        
+        .info-row .label {
+            font-weight: 700;
+            color: #333;
+            margin-left: 10px;
+            min-width: 80px;
+        }
+        
+        .info-row .value {
+            color: #000;
+            flex: 1;
+            font-weight: 600;
+        }
+        
+        .otp-value {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white !important;
+            padding: 5px 20px;
+            border-radius: 30px;
+            display: inline-block;
+            font-size: 1.3em;
+            font-weight: 900;
+            letter-spacing: 2px;
+            box-shadow: 0 5px 15px rgba(102,126,234,0.4);
+        }
+        
+        .message-box {
+            margin-top: 15px;
+            background: #1a1a2e;
+            border-radius: 15px;
+            padding: 15px;
+            border: 2px solid #ff00ff;
+        }
+        
+        .message-box .label {
+            color: #ff00ff;
+            font-weight: 700;
+            margin-bottom: 10px;
+            display: block;
+            font-size: 1.1em;
+        }
+        
+        .message-box .content {
+            color: #fff;
+            font-family: monospace;
+            font-size: 0.95em;
+            line-height: 1.6;
+            padding: 10px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            direction: ltr;
+            text-align: left;
+        }
+        
+        .no-data {
+            text-align: center;
+            color: #fff;
+            font-size: 1.5em;
+            padding: 50px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 25px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .date-badge {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 10px;
+            text-align: left;
+            direction: ltr;
+        }
+        
+        hr {
+            border: none;
+            height: 2px;
+            background: linear-gradient(to right, transparent, #ff00ff, transparent);
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>S E L V A & O T P ✨❤️</h1>
+            <div class="stats">
+                📊 إجمالي الرسائل: {{ messages|length }} | 🕐 {{ current_time }}
+            </div>
+        </div>
+
+        {% if messages %}
+            {% for sms in messages %}
+            <div class="card">
+                <div class="card-title">S E L V A & O T P</div>
+                
+                <!-- Country only -->
+                <div class="info-row">
+                    <span class="emoji">🌏</span>
+                    <span class="label">Country :</span>
+                    <span class="value">{{ sms.country_range.split()[0] if sms.country_range else 'Unknown' }}</span>
+                </div>
+                
+                <!-- Service -->
+                <div class="info-row">
+                    <span class="emoji">📱</span>
+                    <span class="label">Service :</span>
+                    <span class="value">{{ sms.service_name }}</span>
+                </div>
+                
+                <!-- Number -->
+                <div class="info-row">
+                    <span class="emoji">☎️</span>
+                    <span class="label">Number :</span>
+                    <span class="value">{{ sms.phone_number }}</span>
+                </div>
+                
+                <!-- CLI -->
+                <div class="info-row">
+                    <span class="emoji">📞</span>
+                    <span class="label">CLI :</span>
+                    <span class="value">{{ sms.cli_number }}</span>
+                </div>
+                
+                <!-- OTP -->
+                <div class="info-row">
+                    <span class="emoji">🔐</span>
+                    <span class="label">OTP Code :</span>
+                    <span class="value"><span class="otp-value">{{ sms.otp_code }}</span></span>
+                </div>
+                
+                <hr>
+                
+                <!-- Full Message -->
+                <div class="message-box">
+                    <span class="label">📨 Full Message :</span>
+                    <div class="content">{{ sms.message_text }}</div>
+                </div>
+                
+                <!-- Date (small) -->
+                <div class="date-badge">
+                    🕐 {{ sms.sms_date }}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="no-data">
+                ⏳ في انتظار وصول رسائل OTP جديدة... ⏳
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
+"""
+
+# =======================
+# دوال مساعدة
+# =======================
+def extract_otp(text):
+    """استخراج OTP من النص"""
+    if not text:
+        return None
+    patterns = [
+        r'(\d{3}[\-\s]?\d{3})',
+        r'code[:\s]*(\d{4,8})',
+        r'(\d{6})',
+        r'(\d{4,8})',
+    ]
+    for p in patterns:
+        m = re.search(p, text, re.IGNORECASE)
+        if m:
+            return m.group(1).replace(' ', '').replace('-', '')
+    return None
+
+def detect_service(cli_text, sms_text=''):
+    """كشف الخدمة"""
+    combined = f"{cli_text} {sms_text}".lower()
+    services = {
+        'WhatsApp': ['whatsapp', 'واتساب', 'واتس'],
+        'Telegram': ['telegram', 'تلغرام', 'تليجرام'],
+        'Google': ['google', 'gmail', 'جوجل'],
+        'Facebook': ['facebook', 'فيسبوك', 'meta'],
+        'Instagram': ['instagram', 'انستغرام', 'انستا'],
+        'TikTok': ['tiktok', 'تيك توك'],
+    }
+    for service, keywords in services.items():
+        for kw in keywords:
+            if kw in combined:
+                return service
+    return cli_text or 'SMS'
+
+def solve_captcha(html):
+    """حل الكابتشا"""
+    match = re.search(r'(\d+)\s*([+\-*/])\s*(\d+)\s*=?\s*\?', html)
+    if match:
+        n1, op, n2 = int(match.group(1)), match.group(2), int(match.group(3))
+        if op == '+':
+            return str(n1 + n2)
+        elif op == '-':
+            return str(n1 - n2)
+        elif op == '*':
+            return str(n1 * n2)
+        elif op == '/':
+            return str(n1 // n2) if n2 else '0'
+    return None
+
+# =======================
+# جلب الرسائل من TimeSMS
+# =======================
+class TimeSMSClient:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+        })
+        self.logged_in = False
+        
+    def login(self):
+        """تسجيل الدخول إلى TimeSMS"""
+        try:
+            print("🔑 جاري تسجيل الدخول...")
+            
+            # جلب صفحة login
+            resp = self.session.get(f"{BASE_URL}/login", timeout=15)
+            if resp.status_code != 200:
+                print(f"❌ فشل في جلب صفحة login: {resp.status_code}")
+                return False
+            
+            # حل الكابتشا
+            captcha = solve_captcha(resp.text)
+            if not captcha:
+                print("❌ لم نتمكن من حل الكابتشا")
+                return False
+            
+            print(f"🧮 الكابتشا: {captcha}")
+            
+            # إرسال بيانات الدخول
+            login_resp = self.session.post(
+                f"{BASE_URL}/signin",
+                data={'username': TIMESMS_USERNAME, 'password': TIMESMS_PASSWORD, 'capt': captcha},
+                headers={'Referer': f"{BASE_URL}/login"},
+                timeout=15,
+                allow_redirects=True
+            )
+            
+            # التحقق من نجاح الدخول
+            self.logged_in = 'login' not in login_resp.url.lower()
+            
+            if self.logged_in:
+                print("✅ تم تسجيل الدخول بنجاح")
+                # زيارة صفحة التقارير
+                reports_url = f"{BASE_URL}/agent/SMSCDRReports"
+                self.session.get(reports_url, timeout=10)
+                return True
+            else:
+                print(f"❌ فشل تسجيل الدخول: {login_resp.url}")
+                return False
+            
+        except Exception as e:
+            print(f"❌ خطأ في تسجيل الدخول: {e}")
+            return False
+    
+    def fetch_sms(self):
+        """جلب رسائل SMS"""
+        if not self.logged_in and not self.login():
+            return None
+        
+        try:
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            reports_url = f"{BASE_URL}/agent/SMSCDRReports"
+            
+            # نجرب AJAX مع headers صح
+            url = f"{BASE_URL}/agent/res/data_smscdr.php"
+            params = {
+                'fdate1': f"{today} 00:00:00",
+                'fdate2': f"{today} 23:59:59",
+                'frange': '',
+                'fclient': '',
+                'fnum': '',
+                'fcli': '',
+                'fg': '0',
+                'sEcho': '1',
+                'iDisplayStart': '0',
+                'iDisplayLength': '500'
+            }
+            
+            headers = {
+                'Referer': reports_url,
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json, text/javascript, */*; q=0.01'
+            }
+            
+            resp = self.session.get(url, params=params, headers=headers, timeout=15)
+            
+            if resp.status_code != 200:
+                print(f"❌ خطأ في الاستجابة: {resp.status_code}")
+                return None
+            
+            try:
+                data = resp.json()
+            except:
+                print("⚠️ الاستجابة مش JSON")
+                return None
+            
+            rows = data.get('aaData', [])
+            records = []
+            
+            for row in rows:
+                if len(row) < 9:
+                    continue
+                    
+                sms_text = str(row[5]) if row[5] else ''
+                
+                record = {
+                    'sms_date': str(row[0]) if len(row) > 0 else '',
+                    'country_range': str(row[1]) if len(row) > 1 else '',
+                    'phone_number': str(row[2]) if len(row) > 2 else '',
+                    'cli_number': str(row[3]) if len(row) > 3 else '',
+                    'client_name': str(row[4]) if len(row) > 4 and row[4] != 'None' else '',
+                    'message_text': sms_text,
+                    'currency_type': str(row[6]) if len(row) > 6 else '',
+                    'my_earnings': str(row[7]) if len(row) > 7 else '',
+                    'client_earnings': str(row[8]) if len(row) > 8 else '',
+                }
+                
+                record['otp_code'] = extract_otp(sms_text) or ''
+                record['service_name'] = detect_service(record['cli_number'], sms_text)
+                
+                if record['otp_code']:
+                    records.append(record)
+            
+            print(f"📊 تم جلب {len(records)} رسالة")
+            return records
+            
+        except Exception as e:
+            print(f"❌ خطأ في جلب الرسائل: {e}")
+            return None
+
+# =======================
+# Flask route
+# =======================
+@app.route("/")
+def home():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("""
+            SELECT sms_date, country_range, phone_number, cli_number, 
+                   message_text, otp_code, service_name 
+            FROM sms_records 
+            ORDER BY id DESC 
+            LIMIT 100
+        """)
+        rows = c.fetchall()
+        conn.close()
+        
+        messages = []
+        for r in rows:
+            messages.append({
+                "sms_date": r[0],
+                "country_range": r[1],
+                "phone_number": r[2],
+                "cli_number": r[3],
+                "message_text": r[4],
+                "otp_code": r[5],
+                "service_name": r[6]
+            })
+        
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return render_template_string(HTML_TEMPLATE, messages=messages, current_time=current_time)
+    
+    except Exception as e:
+        print(f"❌ خطأ في الصفحة: {e}")
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return render_template_string(HTML_TEMPLATE, messages=[], current_time=current_time)
+
+# =======================
+# مراقبة TimeSMS
+# =======================
+def monitor_timesms():
+    """مراقبة موقع TimeSMS وجلب الرسائل"""
+    print("🚀 بدء مراقبة TimeSMS.net...")
+    
+    client = TimeSMSClient()
+    processed = set()
+    
+    # نجلب الرسائل الموجودة أولاً
+    print("📥 جلب الرسائل الموجودة...")
+    records = client.fetch_sms()
+    if records:
+        saved = 0
+        for record in records:
+            # إنشاء hash فريد
+            hash_str = f"{record['sms_date']}-{record['phone_number']}-{record['otp_code']}"
+            record_hash = hashlib.md5(hash_str.encode()).hexdigest()
+            
+            if record_hash not in processed:
+                processed.add(record_hash)
+                
+                conn = sqlite3.connect(DB_FILE)
+                c = conn.cursor()
+                c.execute("""
+                    INSERT INTO sms_records 
+                    (sms_date, country_range, phone_number, cli_number, 
+                     message_text, otp_code, service_name, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    record['sms_date'], record['country_range'], record['phone_number'], 
+                    record['cli_number'], record['message_text'],
+                    record['otp_code'], record['service_name'],
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ))
+                conn.commit()
+                conn.close()
+                saved += 1
+        
+        print(f"✅ تم حفظ {saved} رسالة من TimeSMS")
+    
+    # مراقبة مستمرة
+    fail_count = 0
+    while True:
+        try:
+            records = client.fetch_sms()
+            
+            if records:
+                fail_count = 0
+                for record in records:
+                    hash_str = f"{record['sms_date']}-{record['phone_number']}-{record['otp_code']}"
+                    record_hash = hashlib.md5(hash_str.encode()).hexdigest()
+                    
+                    if record_hash not in processed:
+                        processed.add(record_hash)
+                        
+                        conn = sqlite3.connect(DB_FILE)
+                        c = conn.cursor()
+                        c.execute("""
+                            INSERT INTO sms_records 
+                            (sms_date, country_range, phone_number, cli_number, 
+                             message_text, otp_code, service_name, created_at) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            record['sms_date'], record['country_range'], record['phone_number'], 
+                            record['cli_number'], record['message_text'],
+                            record['otp_code'], record['service_name'],
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        ))
+                        conn.commit()
+                        conn.close()
+                        
+                        print(f"\n📩 رسالة جديدة من TimeSMS!")
+                        print(f"   📱 رقم: {record['phone_number']}")
+                        print(f"   🔑 OTP: {record['otp_code']}")
+            else:
+                fail_count += 1
+                if fail_count % 5 == 0:
+                    print(f"⚠️ {fail_count} محاولات فاشلة متتالية...")
+            
+            time.sleep(5)
+            
+        except Exception as e:
+            print(f"❌ خطأ في المراقبة: {e}")
+            time.sleep(10)
+
+# =======================
+# التشغيل الرئيسي
+# =======================
+if __name__ == "__main__":
+    print("=" * 50)
+    print("🚀 S E L V A & O T P ✨❤️")
+    print("=" * 50)
+    print(f"👤 المستخدم: {TIMESMS_USERNAME}")
+    print(f"📁 قاعدة البيانات: {DB_FILE}")
+    print("=" * 50)
+    
+    # تشغيل مراقبة TimeSMS في خيط منفصل
+    monitor_thread = threading.Thread(target=monitor_timesms, daemon=True)
+    monitor_thread.start()
+    
+    # انتظر شوية عشان يبدأ الجلب
+    time.sleep(3)
+    
+    # تشغيل Flask
+    print("🌐 خادم الويب على http://localhost:5000")
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
